@@ -391,24 +391,53 @@ function damageContactPoint(v,normal){
  return v.position.clone().addScaledVector(normal,-half*.96).add(new THREE.Vector3(0,Math.max(.35,v.height*.30),0));
 }
 function addDamage(v,point,impactDir,amount){
- if(amount<.7)return;const previous=v.damage;v.damage=clamp(v.damage+amount,0,100);v.drivePower=Math.max(0,1-v.damage*.006);if(v.damage>=22)breakVehicleGlass(v);
- let best=null,bestD=Infinity;
- for(const mesh of v.bodyMeshes){if(!mesh.geometry?.attributes?.position)continue;mesh.updateMatrixWorld(true);if(!mesh.geometry.boundingSphere)mesh.geometry.computeBoundingSphere();const sphere=mesh.geometry.boundingSphere;if(!sphere)continue;const center=mesh.localToWorld(sphere.center.clone()),d=Math.max(0,center.distanceTo(point)-sphere.radius);if(d<bestD){bestD=d;best=mesh;}}
+ if(amount<.7)return;
+ const previous=v.damage;v.damage=clamp(v.damage+amount,0,100);v.drivePower=Math.max(0,1-v.damage*.006);
+ if(v.damage>=22)breakVehicleGlass(v);
+ // Rank meshes by the nearest actual surface vertex, not by bounding-sphere center.
+ let best=null,bestD=Infinity,bestLocalHit=null;
+ for(const mesh of v.bodyMeshes){
+  if(!mesh.geometry?.attributes?.position)continue;
+  mesh.updateWorldMatrix(true,false);
+  if(!mesh.geometry.boundingSphere)mesh.geometry.computeBoundingSphere();
+  const sphere=mesh.geometry.boundingSphere;if(!sphere)continue;
+  const localPoint=mesh.worldToLocal(point.clone());
+  const worldScale=mesh.getWorldScale(new THREE.Vector3());
+  const scale=(Math.abs(worldScale.x)+Math.abs(worldScale.y)+Math.abs(worldScale.z))/3;
+  if(localPoint.distanceTo(sphere.center)>sphere.radius+2.8/Math.max(scale,.001))continue;
+  const pos=mesh.geometry.attributes.position,step=Math.max(1,Math.ceil(pos.count/1800));
+  let nearestSq=Infinity,nearest=null;
+  for(let i=0;i<pos.count;i+=step){
+    const dx=pos.getX(i)-localPoint.x,dy=pos.getY(i)-localPoint.y,dz=pos.getZ(i)-localPoint.z,d2=dx*dx+dy*dy+dz*dz;
+    if(d2<nearestSq){nearestSq=d2;nearest=new THREE.Vector3(pos.getX(i),pos.getY(i),pos.getZ(i));}
+  }
+  const worldDistance=Math.sqrt(nearestSq)*scale;
+  if(nearest&&worldDistance<bestD){bestD=worldDistance;best=mesh;bestLocalHit=nearest;}
+ }
  if(best&&bestD<2.8){
   if(!v.damageMeshes.has(best)){const original=best.geometry;best.geometry=original.clone();v.damageMeshes.set(best,original);}
-  const geom=best.geometry,pos=geom.attributes.position,localHit=best.worldToLocal(point.clone()),inward=best.worldToLocal(point.clone().add(impactDir)).sub(localHit).normalize();
-  const radius=clamp(.48+amount*.035,.62,1.65)/Math.max(v.modelScale,.001),depth=clamp(.10+amount*.034,.20,1.05)/Math.max(v.modelScale,.001);let changed=false;
+  const geom=best.geometry,pos=geom.attributes.position,localHit=bestLocalHit;
+  const worldA=best.worldToLocal(point.clone()),worldB=best.worldToLocal(point.clone().add(impactDir));
+  const inward=worldB.sub(worldA).normalize();
+  const radius=clamp(.48+amount*.035,.62,1.65)/Math.max(v.modelScale,.001);
+  const depth=clamp(.10+amount*.034,.20,1.05)/Math.max(v.modelScale,.001);
+  let changed=false;
   for(let i=0;i<pos.count;i++){
-   const ox=pos.getX(i)-localHit.x,oy=pos.getY(i)-localHit.y,oz=pos.getZ(i)-localHit.z,d=Math.hypot(ox,oy,oz);if(d>=radius)continue;
-   const t=1-d/radius,bowl=t*t*(3-2*t),rim=Math.exp(-Math.pow((d-radius*.70)/(radius*.12),2)),wrinkle=Math.sin(ox*17+oy*23+oz*19+d*26)*depth*.055*t,push=depth*bowl-depth*.30*rim;
-   pos.setXYZ(i,pos.getX(i)+inward.x*push+oz*.018*wrinkle,pos.getY(i)+inward.y*push+wrinkle,pos.getZ(i)+inward.z*push-ox*.018*wrinkle);changed=true;
+   const ox=pos.getX(i)-localHit.x,oy=pos.getY(i)-localHit.y,oz=pos.getZ(i)-localHit.z,d=Math.hypot(ox,oy,oz);
+   if(d>=radius)continue;
+   const t=1-d/radius,bowl=t*t*(3-2*t);
+   const rim=Math.exp(-Math.pow((d-radius*.70)/(radius*.12),2));
+   const wrinkle=Math.sin(ox*17+oy*23+oz*19+d*26)*depth*.055*t;
+   const push=depth*bowl-depth*.30*rim;
+   pos.setXYZ(i,pos.getX(i)+inward.x*push+oz*.018*wrinkle,
+     pos.getY(i)+inward.y*push+wrinkle,pos.getZ(i)+inward.z*push-ox*.018*wrinkle);
+   changed=true;
   }
   if(changed){pos.needsUpdate=true;geom.computeVertexNormals();geom.computeBoundingBox();geom.computeBoundingSphere();}
  }
  if(previous<42&&v.damage>=42)showToast('Heavy body damage · engine smoking');
  if(previous<76&&v.damage>=76)showToast('Critical damage · vehicle fire started');
 }
-
 function burst(point,velocity){for(let i=0;i<13;i++){const vel=velocity.clone().multiplyScalar(-.12).add(new THREE.Vector3((Math.random()-.5)*5,Math.random()*3,(Math.random()-.5)*5));spawnParticle(point,vel,i%3?0xffa13a:0xffdf81,.35+Math.random()*.45,.035+Math.random()*.025,'spark');}}
 function updateParticles(dt){
  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life-=dt;p.age=(p.age||0)+dt;
