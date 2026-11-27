@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#18201d">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2213%22 fill=%22%2318201d%22/%3E%3Cpath d=%22M9 39h46l-6-15H18z%22 fill=%22%23b7d7a7%22/%3E%3Ccircle cx=%2220%22 cy=%2242%22 r=%226%22 fill=%22%23111713%22/%3E%3Ccircle cx=%2245%22 cy=%2242%22 r=%226%22 fill=%22%23111713%22/%3E%3C/svg%3E">
 <title>Small-Gift Manual · Car Test Grounds</title>
 <style>
 :root{color-scheme:dark;--bg:#111713;--panel:#1b241f;--line:#354139;--ink:#edf2ed;--muted:#a6b2a8;--accent:#b7d7a7;--warn:#e4bf83;--bad:#df897d}
@@ -173,19 +174,47 @@ const palette={
 const performance={avg:12.3,sport:17.0,suv:10.8,truck:10.4,old:9.5,modern:13.6};
 const topspeed={avg:52,sport:83,suv:48,truck:49,old:43,modern:61};
 function pathBase(path){try{return decodeURIComponent(String(path).replace(/\\/g,'/').split(/[?#]/)[0].split('/').pop()).toLowerCase();}catch{return String(path).toLowerCase();}}
+function assetStem(path){
+  const base=pathBase(path),dot=base.lastIndexOf('.');
+  const stem=dot>0?base.slice(0,dot):base;
+  return stem.startsWith('anyconv.com__')?stem.slice(13):stem;
+}
 function createAssetManager(model){
-  const manager=new THREE.LoadingManager(); const byBase=new Map();
-  for(const asset of model.assets||[]){const b=pathBase(asset);if(!byBase.has(b))byBase.set(b,[]);byBase.get(b).push(asset);}
+  const manager=new THREE.LoadingManager(),byBase=new Map(),byStem=new Map();
+  for(const asset of [...(model.assets||[]),model.url,model.mtl].filter(Boolean)){
+    const base=pathBase(asset),stem=assetStem(asset);
+    if(!byBase.has(base))byBase.set(base,[]);byBase.get(base).push(asset);
+    if(!byStem.has(stem))byStem.set(stem,[]);byStem.get(stem).push(asset);
+  }
+  const fallbackTexture='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR4nGOcNm3afwYGBgYmBigAACpIAsWIcL6eAAAAAElFTkSuQmCC';
+  const aliases={
+    'lowpoly-generic-suv':{
+      'bmw_x4_d.psd':'./models/cars/suv/lowpoly-generic-suv/textures/Gen_SUV_D.png',
+      'bmw_x4_shadow.png':'./models/cars/suv/lowpoly-generic-suv/textures/Gen_SUV_Shadow.png'
+    },
+    'lowpoly-generic-suv-police':{
+      'bmw_x4_shadow.png':'./models/cars/suv/lowpoly-generic-suv/textures/Gen_SUV_Shadow.png'
+    }
+  };
   manager.setURLModifier((request)=>{
-    if(/^(data:|blob:|https?:)/i.test(request))return request;
-    let raw=String(request).replace(/\\/g,'/');let base=pathBase(raw);
+    if(/^(data:|blob:)/i.test(request))return request;
+    let raw=String(request).split(String.fromCharCode(92)).join('/'),sameOrigin=false;
+    if(raw.startsWith('http://')||raw.startsWith('https://')){
+      try{const url=new URL(raw);if(url.origin!==window.location.origin)return request;raw=url.pathname;sameOrigin=true;}
+      catch{return request;}
+    }
+    const base=pathBase(raw);
     let matches=byBase.get(base);
-    if(!matches){const keys=[...byBase.keys()].filter(k=>base.endsWith(k)||k.endsWith(base));if(keys.length)matches=byBase.get(keys.sort((a,b)=>b.length-a.length)[0]);}
-    if(!matches||!matches.length)return request;
-    let selected=matches[0];
-    if(/textures/i.test(raw))selected=matches.find(x=>/\/textures\//i.test(x))||selected;
-    else if(/source/i.test(raw))selected=matches.find(x=>/\/source\//i.test(x))||selected;
-    return new URL(selected,document.baseURI).href;
+    if(!matches||!matches.length)matches=byStem.get(assetStem(base));
+    if(matches&&matches.length){
+      let selected=matches[0];
+      if(raw.toLowerCase().includes('/textures/'))selected=matches.find(x=>x.toLowerCase().includes('/textures/'))||selected;
+      else if(raw.toLowerCase().includes('/source/'))selected=matches.find(x=>x.toLowerCase().includes('/source/'))||selected;
+      return new URL(selected,document.baseURI).href;
+    }
+    const alias=aliases[model.id]?.[base];if(alias)return new URL(alias,document.baseURI).href;
+    if(sameOrigin||raw.toLowerCase().includes('car-models-upload-expanded')||base.endsWith('.psd')||base.endsWith('.tga'))return fallbackTexture;
+    return request;
   });
   manager.onError=(url)=>console.warn('Asset load failed:',url);
   return manager;
@@ -360,7 +389,7 @@ function updatePlayer(dt){
 function updatePrompt(){if(activeVehicle){promptEl.style.display='block';promptEl.textContent='Press E to get out';return;}const near=nearestVehicle();if(near){promptEl.style.display='block';promptEl.textContent=`Press E to enter ${near.name}`;}else promptEl.style.display='none';for(const v of vehicles){if(v.button)v.button.classList.toggle('near',v===near||v===activeVehicle);}}
 function updateHUD(){if(activeVehicle){const kmh=Math.round(Math.abs(activeVehicle.velocity.dot(new THREE.Vector3(Math.sin(activeVehicle.yaw),0,-Math.cos(activeVehicle.yaw))))*3.6);speedEl.textContent=kmh;vehicleNameEl.textContent=activeVehicle.name;damageFill.style.width=`${activeVehicle.damage}%`;damageLabel.textContent=`${Math.round(activeVehicle.damage)}% damage${activeVehicle.slip>.22?' · drifting':''}`;}else{speedEl.textContent='0';vehicleNameEl.textContent='On foot';damageFill.style.width='0%';damageLabel.textContent='Choose a vehicle';}}
 function updateCamera(dt){const target=activeVehicle?activeVehicle.position:player.position;const desiredTarget=target.clone().add(new THREE.Vector3(0,activeVehicle?1.25:1.25,0));controls.target.lerp(desiredTarget,1-Math.exp(-5.5*dt));controls.update();}
-function animate(){const dt=Math.min(clock.getDelta(),.04);if(activeVehicle)updateVehicle(activeVehicle,dt);else updatePlayer(dt);updateParticles(dt);updateCamera(dt);updatePrompt();updateHUD();renderer.render(scene,camera);if(lastToast&&nowMs()-lastToast>1800)$('#toast').style.opacity='0';}
+function animate(){const dt=Math.min(clock.getDelta(),.04);if(!player){controls.update();renderer.render(scene,camera);return;}if(activeVehicle)updateVehicle(activeVehicle,dt);else updatePlayer(dt);updateParticles(dt);updateCamera(dt);updatePrompt();updateHUD();renderer.render(scene,camera);if(lastToast&&nowMs()-lastToast>1800)$('#toast').style.opacity='0';}
 function onKeyDown(e){if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys[e.code]=true;if(e.repeat)return;if(e.code==='KeyE'){if(activeVehicle)exitVehicle();else{const v=nearestVehicle();if(v)enterVehicle(v);else showToast('Get closer to a parked vehicle.');}}if(e.code==='KeyR'&&activeVehicle)resetVehicle(activeVehicle);}
 function onKeyUp(e){keys[e.code]=false;}
 window.addEventListener('keydown',onKeyDown);window.addEventListener('keyup',onKeyUp);window.addEventListener('blur',()=>Object.keys(keys).forEach(k=>keys[k]=false));
