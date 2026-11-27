@@ -54,13 +54,11 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { FBXLoader } from './vendor/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
-import { DDSLoader } from 'three/addons/loaders/DDSLoader.js';
-import { TGALoader } from 'three/addons/loaders/TGALoader.js';
 
 const $ = (s)=>document.querySelector(s);
 const host = $('#game'), loading = $('#loading'), loadText = $('#loading-text'), progress = $('#progressbar');
@@ -191,22 +189,57 @@ const palette={
 };
 const performance={avg:12.3,sport:17.0,suv:10.8,truck:10.4,old:9.5,modern:13.6};
 const topspeed={avg:52,sport:83,suv:48,truck:49,old:43,modern:61};
-function pathBase(path){try{return decodeURIComponent(String(path).replace(/\\/g,'/').split(/[?#]/)[0].split('/').pop()).toLowerCase();}catch{return String(path).toLowerCase();}}
+function pathBase(path){
+  let raw=String(path??'').replace(/\\/g,'/');
+  if(raw.startsWith('http://')||raw.startsWith('https://')){
+    try{
+      const u=new URL(raw);
+      const hashFile=u.hash&&/\\.[a-z0-9]+$/i.test(u.hash.slice(1))?u.hash:'';
+      raw=u.pathname+hashFile;
+    }catch{}
+  }
+  raw=raw.split('?')[0];
+  const base=raw.slice(raw.lastIndexOf('/')+1);
+  try{return decodeURIComponent(base).toLowerCase();}catch{return base.toLowerCase();}
+}
 function assetStem(path){
   const base=pathBase(path),dot=base.lastIndexOf('.');
   const stem=dot>0?base.slice(0,dot):base;
   return stem.startsWith('anyconv.com__')?stem.slice(13):stem;
 }
+function assetURL(path){
+  return new URL(String(path).replace(/#/g,'%23'),document.baseURI).href;
+}
+class FallbackTextureLoader{
+  constructor(manager,model){this.manager=manager;this.model=model;this.path='';}
+  setPath(path){this.path=path||'';return this;}
+  load(url,onLoad,onProgress,onError){
+    // If a browser image with the same basename exists, use it as the format-converted asset.
+    const stem=assetStem(url);
+    const candidates=(this.model.assets||[]).filter(p=>assetStem(p)===stem&&/\\.(png|jpe?g|webp|bmp)$/i.test(p));
+    const converted=candidates[0];
+    if(converted)return new THREE.TextureLoader(this.manager).load(assetURL(converted),onLoad,onProgress,onError);
+    // FBX exports sometimes contain mislabeled/missing packed data. Never pass those bytes
+    // through DDS/TGA decoders: provide a valid neutral texel so WebGL cannot crash.
+    if(typeof url==='string'&&url.startsWith('data:image/'))
+      return new THREE.TextureLoader(this.manager).load(url,onLoad,onProgress,onError);
+    const tex=new THREE.DataTexture(new Uint8Array([128,128,128,255]),1,1,THREE.RGBAFormat,THREE.UnsignedByteType);
+    tex.colorSpace=THREE.SRGBColorSpace;tex.needsUpdate=true;
+    if(typeof onLoad==='function')queueMicrotask(()=>onLoad(tex));
+    return tex;
+  }
+}
 function createAssetManager(model){
   const manager=new THREE.LoadingManager(),byBase=new Map(),byStem=new Map();
-  manager.addHandler(/\.dds(?:[?#].*)?$/i,new DDSLoader(manager));
-  manager.addHandler(/\.tga(?:[?#].*)?$/i,new TGALoader(manager));
+  const fallbackLoader=new FallbackTextureLoader(manager,model);
+  manager.addHandler(/\\.dds(?:[?#].*)?$/i,fallbackLoader);
+  manager.addHandler(/\\.tga(?:[?#].*)?$/i,fallbackLoader);
   for(const asset of [...(model.assets||[]),model.url,model.mtl].filter(Boolean)){
     const base=pathBase(asset),stem=assetStem(asset);
     if(!byBase.has(base))byBase.set(base,[]);byBase.get(base).push(asset);
     if(!byStem.has(stem))byStem.set(stem,[]);byStem.get(stem).push(asset);
   }
-  const fallbackTexture='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR4nGOcNm3afwYGBgYmBigAACpIAsWIcL6eAAAAAElFTkSuQmCC';
+  const fallbackTexture='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="#808080"/></svg>');
   const aliases={
     'lowpoly-generic-suv':{
       'bmw_x4_d.psd':'./models/cars/suv/lowpoly-generic-suv/textures/Gen_SUV_D.png',
@@ -220,8 +253,12 @@ function createAssetManager(model){
     if(/^(data:|blob:)/i.test(request))return request;
     let raw=String(request).split(String.fromCharCode(92)).join('/'),sameOrigin=false;
     if(raw.startsWith('http://')||raw.startsWith('https://')){
-      try{const url=new URL(raw);if(url.origin!==window.location.origin)return request;raw=url.pathname;sameOrigin=true;}
-      catch{return request;}
+      try{
+        const url=new URL(raw);
+        if(url.origin!==window.location.origin)return request;
+        const hashFile=url.hash&&/\\.[a-z0-9]+$/i.test(url.hash.slice(1))?url.hash:'';
+        raw=url.pathname+hashFile;sameOrigin=true;
+      }catch{return request;}
     }
     const base=pathBase(raw);
     let matches=byBase.get(base);
@@ -230,10 +267,10 @@ function createAssetManager(model){
       let selected=matches[0];
       if(raw.toLowerCase().includes('/textures/'))selected=matches.find(x=>x.toLowerCase().includes('/textures/'))||selected;
       else if(raw.toLowerCase().includes('/source/'))selected=matches.find(x=>x.toLowerCase().includes('/source/'))||selected;
-      return new URL(selected,document.baseURI).href;
+      return assetURL(selected);
     }
-    const alias=aliases[model.id]?.[base];if(alias)return new URL(alias,document.baseURI).href;
-    if(sameOrigin||raw.toLowerCase().includes('car-models-upload-expanded')||base.endsWith('.psd')||base.endsWith('.tga'))return fallbackTexture;
+    const alias=aliases[model.id]?.[base];if(alias)return assetURL(alias);
+    if(sameOrigin||raw.toLowerCase().includes('car-models-upload-expanded')||/\\.(psd|tga|tif|tiff|dds)$/i.test(base))return fallbackTexture;
     return request;
   });
   manager.onError=(url)=>console.warn('Asset load failed:',url);
