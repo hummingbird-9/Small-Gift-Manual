@@ -194,7 +194,7 @@ function pathBase(path){
   if(raw.startsWith('http://')||raw.startsWith('https://')){
     try{
       const u=new URL(raw);
-      const hashFile=u.hash&&/\\.[a-z0-9]+$/i.test(u.hash.slice(1))?u.hash:'';
+      const hashFile=u.hash&&/\.[a-z0-9]+$/i.test(u.hash.slice(1))?u.hash:'';
       raw=u.pathname+hashFile;
     }catch{}
   }
@@ -216,7 +216,7 @@ class FallbackTextureLoader{
   load(url,onLoad,onProgress,onError){
     // If a browser image with the same basename exists, use it as the format-converted asset.
     const stem=assetStem(url);
-    const candidates=(this.model.assets||[]).filter(p=>assetStem(p)===stem&&/\\.(png|jpe?g|webp|bmp)$/i.test(p));
+    const candidates=(this.model.assets||[]).filter(p=>assetStem(p)===stem&&/\.(png|jpe?g|webp|bmp)$/i.test(p));
     const converted=candidates[0];
     if(converted)return new THREE.TextureLoader(this.manager).load(assetURL(converted),onLoad,onProgress,onError);
     // FBX exports sometimes contain mislabeled/missing packed data. Never pass those bytes
@@ -232,8 +232,8 @@ class FallbackTextureLoader{
 function createAssetManager(model){
   const manager=new THREE.LoadingManager(),byBase=new Map(),byStem=new Map();
   const fallbackLoader=new FallbackTextureLoader(manager,model);
-  manager.addHandler(/\\.dds(?:[?#].*)?$/i,fallbackLoader);
-  manager.addHandler(/\\.tga(?:[?#].*)?$/i,fallbackLoader);
+  manager.addHandler(/\.dds(?:[?#].*)?$/i,fallbackLoader);
+  manager.addHandler(/\.tga(?:[?#].*)?$/i,fallbackLoader);
   for(const asset of [...(model.assets||[]),model.url,model.mtl].filter(Boolean)){
     const base=pathBase(asset),stem=assetStem(asset);
     if(!byBase.has(base))byBase.set(base,[]);byBase.get(base).push(asset);
@@ -256,7 +256,7 @@ function createAssetManager(model){
       try{
         const url=new URL(raw);
         if(url.origin!==window.location.origin)return request;
-        const hashFile=url.hash&&/\\.[a-z0-9]+$/i.test(url.hash.slice(1))?url.hash:'';
+        const hashFile=url.hash&&/\.[a-z0-9]+$/i.test(url.hash.slice(1))?url.hash:'';
         raw=url.pathname+hashFile;sameOrigin=true;
       }catch{return request;}
     }
@@ -270,7 +270,7 @@ function createAssetManager(model){
       return assetURL(selected);
     }
     const alias=aliases[model.id]?.[base];if(alias)return assetURL(alias);
-    if(sameOrigin||raw.toLowerCase().includes('car-models-upload-expanded')||/\\.(psd|tga|tif|tiff|dds)$/i.test(base))return fallbackTexture;
+    if(sameOrigin||raw.toLowerCase().includes('car-models-upload-expanded')||/\.(psd|tga|tif|tiff|dds)$/i.test(base))return fallbackTexture;
     return request;
   });
   manager.onError=(url)=>console.warn('Asset load failed:',url);
