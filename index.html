@@ -199,8 +199,8 @@ function assetStem(path){
 }
 function createAssetManager(model){
   const manager=new THREE.LoadingManager(),byBase=new Map(),byStem=new Map();
-  manager.addHandler(/\\.dds(?:[?#].*)?$/i,new DDSLoader(manager));
-  manager.addHandler(/\\.tga(?:[?#].*)?$/i,new TGALoader(manager));
+  manager.addHandler(/\.dds(?:[?#].*)?$/i,new DDSLoader(manager));
+  manager.addHandler(/\.tga(?:[?#].*)?$/i,new TGALoader(manager));
   for(const asset of [...(model.assets||[]),model.url,model.mtl].filter(Boolean)){
     const base=pathBase(asset),stem=assetStem(asset);
     if(!byBase.has(base))byBase.set(base,[]);byBase.get(base).push(asset);
