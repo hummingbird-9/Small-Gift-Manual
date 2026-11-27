@@ -229,9 +229,9 @@ function fixMaterials(object,model){
 }
 function modelSize(object){object.updateMatrixWorld(true);return new THREE.Box3().setFromObject(object).getSize(new THREE.Vector3());}
 function createShadow(){const g=new THREE.CircleGeometry(2.2,20);g.rotateX(-Math.PI/2);return new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0x18201a,transparent:true,opacity:.22,depthWrite:false}));}
-const vehicles=[];let activeVehicle=null;let player=null;let loadErrors=[];const keys={};let lastToast=0;
+const vehicles=[];let activeVehicle=null;let player=null;let loadErrors=[];const keys={};let lastToast=0;function nowMs(){return (typeof performance!=='undefined'&&typeof performance.now==='function')?nowMs():Date.now();}
 const tmpV=new THREE.Vector3(),tmpV2=new THREE.Vector3();
-function showToast(message){const t=$('#toast');t.textContent=message;t.style.opacity='1';lastToast=performance.now();}
+function showToast(message){const t=$('#toast');t.textContent=message;t.style.opacity='1';lastToast=nowMs();}
 function prepareVehicle(object,model,index){
   fixMaterials(object,model);
   // Standardize car length along local Z so the driving code has one forward axis.
@@ -355,12 +355,12 @@ function updatePlayer(dt){
   player.position.y=terrainHeight(player.position.x,player.position.z);
   if(move.lengthSq()>.001)player.yaw=Math.atan2(-move.x,move.z);
   player.group.position.copy(player.position);player.group.rotation.y=player.yaw;
-  const speedNow=player.velocity.length();player.walkPhase+=dt*speedNow*2.4;const gait=Math.min(1,speedNow/3.5);player.walkParts.legs.forEach((part,i)=>part.rotation.x=Math.sin(player.walkPhase+i*Math.PI)*.48*gait);player.walkParts.arms.forEach((part,i)=>part.rotation.x=-Math.sin(player.walkPhase+i*Math.PI)*.38*gait);player.group.position.y+=Math.sin(performance.now()*.012)*Math.min(.045,speedNow*.008);
+  const speedNow=player.velocity.length();player.walkPhase+=dt*speedNow*2.4;const gait=Math.min(1,speedNow/3.5);player.walkParts.legs.forEach((part,i)=>part.rotation.x=Math.sin(player.walkPhase+i*Math.PI)*.48*gait);player.walkParts.arms.forEach((part,i)=>part.rotation.x=-Math.sin(player.walkPhase+i*Math.PI)*.38*gait);player.group.position.y+=Math.sin(nowMs()*.012)*Math.min(.045,speedNow*.008);
 }
 function updatePrompt(){if(activeVehicle){promptEl.style.display='block';promptEl.textContent='Press E to get out';return;}const near=nearestVehicle();if(near){promptEl.style.display='block';promptEl.textContent=`Press E to enter ${near.name}`;}else promptEl.style.display='none';for(const v of vehicles){if(v.button)v.button.classList.toggle('near',v===near||v===activeVehicle);}}
 function updateHUD(){if(activeVehicle){const kmh=Math.round(Math.abs(activeVehicle.velocity.dot(new THREE.Vector3(Math.sin(activeVehicle.yaw),0,-Math.cos(activeVehicle.yaw))))*3.6);speedEl.textContent=kmh;vehicleNameEl.textContent=activeVehicle.name;damageFill.style.width=`${activeVehicle.damage}%`;damageLabel.textContent=`${Math.round(activeVehicle.damage)}% damage${activeVehicle.slip>.22?' · drifting':''}`;}else{speedEl.textContent='0';vehicleNameEl.textContent='On foot';damageFill.style.width='0%';damageLabel.textContent='Choose a vehicle';}}
 function updateCamera(dt){const target=activeVehicle?activeVehicle.position:player.position;const desiredTarget=target.clone().add(new THREE.Vector3(0,activeVehicle?1.25:1.25,0));controls.target.lerp(desiredTarget,1-Math.exp(-5.5*dt));controls.update();}
-function animate(){const dt=Math.min(clock.getDelta(),.04);if(activeVehicle)updateVehicle(activeVehicle,dt);else updatePlayer(dt);updateParticles(dt);updateCamera(dt);updatePrompt();updateHUD();renderer.render(scene,camera);if(lastToast&&performance.now()-lastToast>1800)$('#toast').style.opacity='0';}
+function animate(){const dt=Math.min(clock.getDelta(),.04);if(activeVehicle)updateVehicle(activeVehicle,dt);else updatePlayer(dt);updateParticles(dt);updateCamera(dt);updatePrompt();updateHUD();renderer.render(scene,camera);if(lastToast&&nowMs()-lastToast>1800)$('#toast').style.opacity='0';}
 function onKeyDown(e){if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys[e.code]=true;if(e.repeat)return;if(e.code==='KeyE'){if(activeVehicle)exitVehicle();else{const v=nearestVehicle();if(v)enterVehicle(v);else showToast('Get closer to a parked vehicle.');}}if(e.code==='KeyR'&&activeVehicle)resetVehicle(activeVehicle);}
 function onKeyUp(e){keys[e.code]=false;}
 window.addEventListener('keydown',onKeyDown);window.addEventListener('keyup',onKeyUp);window.addEventListener('blur',()=>Object.keys(keys).forEach(k=>keys[k]=false));
