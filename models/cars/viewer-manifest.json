@@ -835,18 +835,8 @@
       ]
     }
   ],
-  "unsupported": [
-    {
-      "name": "911 Carrera 4S (Blend file)",
-      "category": "sport",
-      "file": "./models/cars/sport/free-porsche-911-carrera-4s/source/9e528d02fb594880b6f241f668d63bc0.blend",
-      "type": ".blend"
-    },
-    {
-      "name": "Crown Victoria (Blend file)",
-      "category": "suv",
-      "file": "./models/cars/suv/police-car/source/source/Ford Crown Victoria Police Interceptor.blend",
-      "type": ".blend"
-    }
+  "unsupported": [],
+  "notes": [
+    "Only browser-loadable vehicle models are listed in the playable roster."
   ]
 }
