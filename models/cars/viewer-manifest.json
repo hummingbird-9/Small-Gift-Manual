@@ -1,25 +1,6 @@
 {
   "models": [
     {
-      "id": "2022-peugeot-308",
-      "name": "308 Hatchback",
-      "category": "avg-commuter",
-      "url": "./models/cars/avg-commuter/2022-peugeot-308/source/Peugeot_308_2022.fbx",
-      "loader": "fbx",
-      "mtl": null,
-      "assets": [
-        "./models/cars/avg-commuter/2022-peugeot-308/textures/AnyConv.com__badge.png",
-        "./models/cars/avg-commuter/2022-peugeot-308/textures/AnyConv.com__Plate_D.png",
-        "./models/cars/avg-commuter/2022-peugeot-308/textures/AnyConv.com__interiordfs.png",
-        "./models/cars/avg-commuter/2022-peugeot-308/textures/AnyConv.com__interi_logo.png",
-        "./models/cars/avg-commuter/2022-peugeot-308/textures/AnyConv.com__LightA_em3issive.png",
-        "./models/cars/avg-commuter/2022-peugeot-308/textures/AnyConv.com__carpetdfs.png",
-        "./models/cars/avg-commuter/2022-peugeot-308/textures/AnyConv.com__Brakes_01_DM.png",
-        "./models/cars/avg-commuter/2022-peugeot-308/textures/AnyConv.com__pug208.png",
-        "./models/cars/avg-commuter/2022-peugeot-308/textures/AnyConv.com__Interior_emissive.jpeg"
-      ]
-    },
-    {
       "id": "honda-civic",
       "name": "Civic Hatchback",
       "category": "avg-commuter",
