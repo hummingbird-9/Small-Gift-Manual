@@ -1,0 +1,38 @@
+USED-LOOK VALIDATION
+External paint/base-colour textures modified: 4
+F-150 body-shell triangles used for lower dirt UV map: 6885
+F-150 vertical coordinate range: 0.483 to 2.016
+F-150 GLB bytes: 23746708
+Original logo/badge/emblem-named files verified unchanged: 24
+
+MODIFIED TEXTURES:
+lowpoly-generic-suv/textures/Gen_SUV__Color.png
+lowpoly-generic-suv-police/textures/Gen_SUV_Police_D.png
+police-car/source/textures/Crown_Vic_Body_Color.png
+rolls-royce-spectre/source/body.jpg
+
+UNCHANGED LOGO FILES (sample):
+free-porsche-911-carrera-4s/textures/porsche_logo_PNG1.png
+honda-s2000/textures/Honda_S2000TNR_2001_BadgeA_Normal.png
+honda-s2000/textures/BadgeA_DiffuseAOSO.png
+honda-s2000/textures/CalliperBadgeA_Diffuse.png
+honda-s2000/source/source/Honda_S2000TNR_2001_BadgeA_Normal.png
+honda-s2000/source/source/Honda_S2000TNR_2001_CalliperBadgeA_MaterialOpacity.png
+honda-s2000/source/source/Honda_S2000TNR_2001_BadgeA_MaterialOpacity.png
+honda-s2000/source/source/Honda_S2000TNR_2001_CalliperBadgeA_Diffuse.png
+honda-s2000/source/source/BadgeA_DiffuseAOSO.png
+honda-s2000/source/source/Honda_S2000TNR_2001_BadgeA_DiffuseAOSO.png
+honda-s2000/source/source/CalliperBadgeA_Diffuse.png
+honda-s2000/source/textures/Honda_S2000TNR_2001_BadgeA_Normal.png
+honda-s2000/source/textures/BadgeA_DiffuseAOSO.png
+honda-s2000/source/textures/Honda_S2000TNR_2001_BadgeA_DiffuseAOSO.png
+honda-s2000/source/textures/CalliperBadgeA_Diffuse.png
+ff-8-dominic-torettos-ice-dodge-charger/textures/symbolsdiff1.png
+ff-8-dominic-torettos-ice-dodge-charger/textures/badge.png
+ff-8-dominic-torettos-ice-dodge-charger/textures/symbolsembossed1.png
+ff-8-dominic-torettos-ice-dodge-charger/textures/dod_chargerrt_69_symbols_diff_447c839f-c9b.png
+ff-8-dominic-torettos-ice-dodge-charger/textures/Sparco-logo-vector.png
+2018-lamborghini-aventador-ks-edition/textures/aventador_ks_badge1.png
+2021-lamborghini-countach-lpi-800-4/textures/Lamborghini-text-logo-1440x900.png
+2022-peugeot-308/textures/AnyConv.com__badge.png
+2022-peugeot-308/textures/AnyConv.com__interi_logo.png

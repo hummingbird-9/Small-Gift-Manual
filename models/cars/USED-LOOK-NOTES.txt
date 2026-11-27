@@ -1,0 +1,15 @@
+USED-LOOK CAR TEXTURE PASS
+
+Changes:
+- Added a UV-mapped road-mud layer to the lower exterior body panels of the F-150. The effect is strongest along the lower doors/rockers and tapers upward.
+- Added subtle road dust, small grime specks and faint scuffs to the generic SUV, police SUV, Crown Victoria body paint, and luxury coupe body paint.
+- Used only base-colour/albedo textures; no normal maps, opacity maps, roughness maps, lighting maps, or geometry were edited.
+- Original maker logos, badges, decals, police markings, and sports-car logos were not redesigned or replaced.
+- Sports/performance-car folders were left untouched.
+- Existing aged/rusty textures for the budget sedan and 1950s classic were kept as supplied.
+
+Limitations:
+- The Honda Civic FBX has no separate external paint texture in this source pack, so it was left unchanged rather than risk altering embedded data.
+- The Peugeot's texture atlas combines body surfaces with several logo/brand islands; it was left unchanged to preserve all original logos.
+- The two old-rusty-car RAR payloads remain nested and were not extracted.
+- This is texture/material work only; no geometry or polygon counts were changed.

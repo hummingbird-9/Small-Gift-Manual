@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#171b20">
+  <title>Car Model Lineup</title>
+  <style>
+    :root { color-scheme: dark; --bg:#171b20; --panel:#20262c; --line:#394149; --muted:#a5afb7; --ink:#edf1f3; --accent:#d8e1e7; }
+    * { box-sizing:border-box; }
+    html,body { margin:0; width:100%; min-height:100%; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+    body { min-height:100vh; display:flex; flex-direction:column; }
+    header { display:flex; align-items:center; gap:16px; padding:13px 18px; border-bottom:1px solid var(--line); background:#1d2228; }
+    .brand { font-size:13px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap; }
+    #status { color:var(--muted); flex:1; min-width:0; }
+    button,select { color:var(--ink); background:#2a323a; border:1px solid #48535d; border-radius:6px; padding:8px 11px; font:inherit; }
+    button { cursor:pointer; }
+    button:hover,select:hover { background:#35404a; }
+    button:focus-visible,select:focus-visible { outline:2px solid #c5d5df; outline-offset:2px; }
+    #stage { position:relative; flex:1; min-height:440px; height:calc(100vh - 178px); overflow:hidden; }
+    #stage canvas { width:100%; height:100%; display:block; }
+    .hint { position:absolute; left:16px; top:14px; color:#d7dfe3; background:#182027d9; border:1px solid #69737a66; border-radius:6px; padding:7px 10px; pointer-events:none; font-size:12px; }
+    #load-errors { position:absolute; right:14px; top:14px; max-width:min(360px,46vw); padding:9px 11px; color:#ffe4d2; background:#3a211bdc; border:1px solid #93563f; border-radius:6px; font-size:12px; display:none; }
+    #rail-wrap { border-top:1px solid var(--line); background:#1d2228; padding:11px 14px 13px; }
+    .rail-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:0 2px 8px; color:var(--muted); font-size:12px; }
+    #rail { display:flex; gap:7px; overflow-x:auto; padding:1px 1px 6px; scrollbar-color:#58636d #222930; }
+    .model-button { flex:0 0 auto; min-width:122px; text-align:left; padding:8px 10px; }
+    .model-button strong { display:block; font-size:12px; font-weight:650; }
+    .model-button small { display:block; color:var(--muted); margin-top:2px; font-size:10px; }
+    .model-button.active { background:#d8e1e7; border-color:#d8e1e7; color:#151a1e; }
+    .model-button.active small { color:#49545c; }
+    #notes { padding:8px 17px; min-height:30px; color:#9ba6ae; font-size:11px; background:#171b20; }
+    @media (max-width:650px) {
+      header { flex-wrap:wrap; gap:9px; }
+      #status { order:3; flex-basis:100%; }
+      #stage { min-height:380px; height:62vh; }
+      .hint { max-width:75%; }
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.166.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.166.1/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header>
+    <div class="brand">Car Model Lineup</div>
+    <div id="status">Starting viewer…</div>
+    <button id="fit" type="button">Fit all</button>
+    <button id="reset" type="button">Reset view</button>
+  </header>
+  <main id="stage">
+    <div class="hint">Drag to orbit · Scroll to zoom · Right-drag to pan · Select a car below to inspect it</div>
+    <div id="load-errors"></div>
+  </main>
+  <section id="rail-wrap">
+    <div class="rail-head"><span>MODELS</span><span id="count">0 loaded</span></div>
+    <nav id="rail" aria-label="Select a car model"></nav>
+  </section>
+  <footer id="notes">Models load from relative paths under <code>models/cars/</code>. This page is designed to sit in the repository root.</footer>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+    import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+    import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
+
+    const stage = document.querySelector('#stage');
+    const statusEl = document.querySelector('#status');
+    const countEl = document.querySelector('#count');
+    const rail = document.querySelector('#rail');
+    const errorsEl = document.querySelector('#load-errors');
+    const notesEl = document.querySelector('#notes');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xcbd2d6);
+
+    const camera = new THREE.PerspectiveCamera(39, 1, 0.05, 2500);
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false, powerPreference:'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.8));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.12;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    stage.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.075;
+    controls.minDistance = 2.5;
+    controls.maxDistance = 900;
+    controls.maxPolarAngle = Math.PI * 0.485;
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x667078, 2.0));
+    const key = new THREE.DirectionalLight(0xffffff, 2.6);
+    key.position.set(-18, 32, 24);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.left = -140;
+    key.shadow.camera.right = 140;
+    key.shadow.camera.top = 55;
+    key.shadow.camera.bottom = -55;
+    key.shadow.bias = -0.00025;
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0xddeaff, 1.05);
+    fill.position.set(24, 15, -22);
+    scene.add(fill);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(3000, 170),
+      new THREE.MeshStandardMaterial({ color:0x6e777d, roughness:0.96, metalness:0.02 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.025;
+    floor.receiveShadow = true;
+    scene.add(floor);
+    const grid = new THREE.GridHelper(3000, 300, 0x8b969c, 0x9ba4a9);
+    grid.position.y = 0.003;
+    grid.material.transparent = true;
+    grid.material.opacity = 0.22;
+    scene.add(grid);
+
+    const modelEntries = [];
+    const loadedGroups = [];
+    const SPACING = 6.4;
+    const TARGET_LENGTH = 4.65;
+    let currentIndex = -1;
+    let allSpan = 0;
+
+    function safeURL(path) { return new URL(path, document.baseURI).href; }
+    function createAssetLookup(model) {
+      const map = new Map();
+      for (const asset of model.assets || []) {
+        const base = decodeURIComponent(asset.replace(/\\/g,'/').split('/').pop()).toLowerCase();
+        if (!map.has(base)) map.set(base, []);
+        map.get(base).push(asset);
+      }
+      return map;
+    }
+    function makeManager(model) {
+      const manager = new THREE.LoadingManager();
+      const assets = createAssetLookup(model);
+      manager.setURLModifier((request) => {
+        if (/^(data:|blob:)/i.test(request)) return request;
+        let normalized = String(request).replace(/\\/g, '/');
+        let base = normalized.split(/[?#]/)[0].split('/').pop() || '';
+        try { base = decodeURIComponent(base); } catch (_) {}
+        const matches = assets.get(base.toLowerCase());
+        if (!matches || !matches.length) return request;
+        const wantsSource = /source/i.test(normalized);
+        const wantsTextures = /textures/i.test(normalized);
+        let selected = matches[0];
+        if (wantsSource) selected = matches.find(x => /\/source\//i.test(x)) || selected;
+        if (wantsTextures) selected = matches.find(x => /\/textures\//i.test(x)) || selected;
+        return safeURL(selected);
+      });
+      return manager;
+    }
+    function loadAsync(loader, url) {
+      return new Promise((resolve, reject) => loader.load(safeURL(url), resolve, undefined, reject));
+    }
+    async function loadModel(model) {
+      const manager = makeManager(model);
+      if (model.loader === 'fbx') {
+        return await loadAsync(new FBXLoader(manager), model.url);
+      }
+      if (model.loader === 'gltf') {
+        const gltf = await loadAsync(new GLTFLoader(manager), model.url);
+        return gltf.scene || gltf.scenes[0];
+      }
+      if (model.loader === 'dae') {
+        const collada = await loadAsync(new ColladaLoader(manager), model.url);
+        return collada.scene;
+      }
+      if (model.loader === 'obj') {
+        let materials = null;
+        if (model.mtl) {
+          const response = await fetch(safeURL(model.mtl));
+          if (!response.ok) throw new Error(`MTL returned ${response.status}`);
+          const text = await response.text();
+          const basePath = safeURL(model.mtl).replace(/[^/]+$/, '');
+          const mtlLoader = new MTLLoader(manager);
+          mtlLoader.setResourcePath(basePath);
+          materials = mtlLoader.parse(text, basePath);
+          materials.preload();
+        }
+        const objLoader = new OBJLoader(manager);
+        if (materials) objLoader.setMaterials(materials);
+        return await loadAsync(objLoader, model.url);
+      }
+      throw new Error(`Unsupported loader: ${model.loader}`);
+    }
+    function prepareModel(object, model, index) {
+      const wrapper = new THREE.Group();
+      wrapper.name = model.name;
+      const content = new THREE.Group();
+      content.add(object);
+      wrapper.add(content);
+      content.updateMatrixWorld(true);
+      let box = new THREE.Box3().setFromObject(content);
+      let size = box.getSize(new THREE.Vector3());
+      // Car files commonly use either X-forward or Z-forward; turn the long axis into the lineup axis.
+      if (size.z > size.x * 1.12) {
+        content.rotation.y = Math.PI / 2;
+        content.updateMatrixWorld(true);
+        box = new THREE.Box3().setFromObject(content);
+        size = box.getSize(new THREE.Vector3());
+      }
+      const length = Math.max(size.x, size.z, 0.001);
+      const scale = TARGET_LENGTH / length;
+      const center = box.getCenter(new THREE.Vector3());
+      content.scale.setScalar(scale);
+      content.position.set(-center.x * scale, -box.min.y * scale, -center.z * scale);
+      wrapper.position.x = (index - (expectedCount - 1) / 2) * SPACING;
+      wrapper.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          if (child.material) {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            for (const mat of materials) {
+              if ('envMapIntensity' in mat) mat.envMapIntensity = 0.65;
+            }
+          }
+        }
+      });
+      scene.add(wrapper);
+      return wrapper;
+    }
+    function focusModel(index) {
+      if (!loadedGroups[index]) return;
+      currentIndex = index;
+      const group = loadedGroups[index];
+      const target = new THREE.Vector3(group.position.x, 1.05, 0);
+      controls.target.copy(target);
+      camera.position.set(group.position.x + 6.8, 5.6, 10.5);
+      controls.update();
+      [...rail.children].forEach((el, i) => el.classList.toggle('active', i === index));
+    }
+    function fitAll() {
+      const count = modelEntries.length || expectedCount;
+      const total = Math.max(TARGET_LENGTH, (count - 1) * SPACING + TARGET_LENGTH);
+      const centerX = 0;
+      const aspect = stage.clientWidth / Math.max(1, stage.clientHeight);
+      const v = THREE.MathUtils.degToRad(camera.fov);
+      const h = 2 * Math.atan(Math.tan(v / 2) * aspect);
+      const distance = (total * 0.5) / Math.tan(h * 0.5) * 1.08;
+      controls.target.set(centerX, 0.95, 0);
+      camera.position.set(centerX, Math.max(12, distance * 0.13), distance);
+      controls.update();
+      currentIndex = -1;
+      [...rail.children].forEach(el => el.classList.remove('active'));
+    }
+    function addButton(model, index) {
+      const button = document.createElement('button');
+      button.className = 'model-button';
+      button.type = 'button';
+      const strong = document.createElement('strong');
+      strong.textContent = model.name;
+      const small = document.createElement('small');
+      small.textContent = model.category;
+      button.append(strong, small);
+      button.addEventListener('click', () => focusModel(index));
+      rail.appendChild(button);
+    }
+
+    let expectedCount = 0;
+    async function main() {
+      const response = await fetch('./models/cars/viewer-manifest.json');
+      if (!response.ok) throw new Error(`Could not load the model manifest (${response.status})`);
+      const manifest = await response.json();
+      const models = manifest.models || [];
+      expectedCount = models.length;
+      statusEl.textContent = `Loading 0 / ${models.length} models…`;
+      notesEl.textContent = 'Drag to orbit · Scroll to zoom · Right-drag to pan. All model files are loaded locally from this repository.';
+
+      const errors = [];
+      for (let i = 0; i < models.length; i++) {
+        const model = models[i];
+        statusEl.textContent = `Loading ${i + 1} / ${models.length}: ${model.name}`;
+        try {
+          const object = await loadModel(model);
+          const group = prepareModel(object, model, i);
+          loadedGroups[i] = group;
+          modelEntries[i] = model;
+          addButton(model, i);
+        } catch (error) {
+          console.error(`Failed to load ${model.name}`, error);
+          errors.push(`${model.name}: ${error.message || error}`);
+          loadedGroups[i] = null;
+          modelEntries[i] = null;
+          const placeholder = { name:model.name, category:model.category };
+          const btn = document.createElement('button');
+          btn.className = 'model-button';
+          btn.type = 'button';
+          btn.disabled = true;
+          btn.innerHTML = `<strong></strong><small>failed to load</small>`;
+          btn.querySelector('strong').textContent = model.name;
+          rail.appendChild(btn);
+        }
+        countEl.textContent = `${Object.values(loadedGroups).filter(Boolean).length} / ${models.length} loaded`;
+      }
+
+      const blendFiles = (manifest.unsupported || []).filter(item => item.type === '.blend');
+      const rarNotes = [
+        'Two Blender (.blend) models are included but need exporting to GLB/GLTF before browsers can display them.',
+        'The two rusty-car downloads are still RAR archives rather than extracted model files.'
+      ];
+      if (blendFiles.length || (manifest.notes || []).length) {
+        notesEl.textContent = [...blendFiles.map(x => `${x.name} needs GLB/GLTF export.`), ...rarNotes].join(' ');
+      } else {
+        notesEl.textContent = rarNotes.join(' ');
+      }
+      if (errors.length) {
+        errorsEl.style.display = 'block';
+        errorsEl.textContent = `Some files did not load: ${errors.slice(0,3).join(' · ')}${errors.length > 3 ? ` · +${errors.length-3} more` : ''}`;
+      }
+      statusEl.textContent = `Loaded ${Object.values(loadedGroups).filter(Boolean).length} of ${models.length} browser-ready models`;
+      fitAll();
+    }
+
+    document.querySelector('#fit').addEventListener('click', fitAll);
+    document.querySelector('#reset').addEventListener('click', () => {
+      if (currentIndex >= 0) focusModel(currentIndex); else fitAll();
+    });
+    function resize() {
+      const width = Math.max(1, stage.clientWidth);
+      const height = Math.max(1, stage.clientHeight);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height, false);
+      if (modelEntries.length) fitAll();
+    }
+    window.addEventListener('resize', resize);
+    resize();
+    renderer.setAnimationLoop(() => {
+      controls.update();
+      renderer.render(scene, camera);
+    });
+    main().catch(error => {
+      console.error(error);
+      statusEl.textContent = 'Viewer could not start';
+      errorsEl.style.display = 'block';
+      errorsEl.textContent = error.message || String(error);
+    });
+  </script>
+</body>
+</html>
