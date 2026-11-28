@@ -513,7 +513,8 @@ function updateWasted(){
 function detonateVehicle(v){
  if(v.destroyed)return;
  const caughtInside=activeVehicle===v;
- const blastDistance=player?Math.hypot(player.position.x-v.position.x,player.position.z-v.position.z):Infinity;
+ const victimPosition=activeVehicle?activeVehicle.position:player?.position;
+ const blastDistance=victimPosition?Math.hypot(victimPosition.x-v.position.x,victimPosition.z-v.position.z):Infinity;
  if(caughtInside||blastDistance<=12.5)showUsed();
  v.destroyed=true;v.damage=100;v.drivePower=0;v.velocity.set(0,0,0);v.vy=0;v.parked=true;v.fireGroup.visible=false;if(v.fireLight)v.fireLight.intensity=0;
  const point=v.position.clone().add(new THREE.Vector3(0,Math.max(.75,v.height*.48),0));spawnParticle(point,new THREE.Vector3(0,.5,0),0xffb54a,.42,.1,'blast');
