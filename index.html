@@ -54,7 +54,7 @@
 </div>
 <div id="rightui">
   <div id="prompt" class="pill"></div>
-  <div class="controlhelp"><b>ON FOOT</b> <span class="key">WASD</span> move · <span class="key">E</span> enter / exit<br><b>DRIVING</b> <span class="key">W</span> accelerate · <span class="key">S</span> brake / reverse · <span class="key">A</span>/<span class="key">D</span> steer · <span class="key">SPACE</span> handbrake · <span class="key">SHIFT</span> hard brake<br>Mouse drag orbit · Wheel zoom · <span class="key">R</span> repair / recover</div>
+  <div class="controlhelp"><b>ON FOOT</b> <span class="key">WASD</span> move · <span class="key">E</span> enter / exit<br><b>DRIVING</b> <span class="key">W</span> accelerate · <span class="key">S</span> brake / reverse · <span class="key">A</span>/<span class="key">D</span> steer · <span class="key">SPACE</span> hold drift / handbrake · <span class="key">SHIFT</span> hard brake<br>Mouse drag orbit on foot · Wheel zoom · <span class="key">R</span> repair / recover</div>
 </div>
 <div id="loading"><div id="loading-title">Loading the test grounds</div><div id="loading-text">Building terrain and loading car models…</div><div id="progress"><div id="progressbar"></div></div></div>
 <div id="errors"></div><div id="toast"></div>
@@ -87,11 +87,7 @@ renderer.shadowMap.enabled = false;
 host.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; controls.dampingFactor = .08; controls.minDistance = 3; controls.maxDistance = 180; controls.maxPolarAngle = Math.PI*.49;
-let chaseOrbit=0,chaseElevation=.19,chaseDistance=10,chaseDragging=false,chasePointerX=0,chasePointerY=0;
-let chaseFollowYaw=Math.PI;
-renderer.domElement.addEventListener('pointerdown',e=>{if(!activeVehicle||e.button!==0)return;chaseDragging=true;chasePointerX=e.clientX;chasePointerY=e.clientY;renderer.domElement.setPointerCapture?.(e.pointerId);e.preventDefault();});
-renderer.domElement.addEventListener('pointermove',e=>{if(!activeVehicle||!chaseDragging)return;const dx=e.clientX-chasePointerX,dy=e.clientY-chasePointerY;chasePointerX=e.clientX;chasePointerY=e.clientY;chaseOrbit-=dx*.006;chaseElevation=clamp(chaseElevation+dy*.003,-.02,.62);});
-const stopChaseDrag=()=>{chaseDragging=false;};renderer.domElement.addEventListener('pointerup',stopChaseDrag);renderer.domElement.addEventListener('pointercancel',stopChaseDrag);
+let chaseElevation=.19,chaseDistance=10;
 renderer.domElement.addEventListener('wheel',e=>{if(!activeVehicle)return;e.preventDefault();chaseDistance=clamp(chaseDistance+e.deltaY*.012,6,18);},{passive:false});
 scene.add(new THREE.HemisphereLight(0xe5f2e8, 0x657064, 2.0));
 const sun = new THREE.DirectionalLight(0xfff3dc, 2.2); sun.position.set(-55,85,35); scene.add(sun);
@@ -400,7 +396,7 @@ function prepareVehicle(object,model,index){
   position:new THREE.Vector3(),velocity:new THREE.Vector3(),yaw:0,y:0,vy:0,pitch:0,roll:0,steer:0,damage:0,wheelAngle:0,
   damageMeshes:new Map(),glassOriginals:new Map(),burntMaterials:new Map(),crackMeshes:[],brokenShards:[],fireGroup:null,fireParts:[],fireLight:null,
   length:4.65,width:Math.max(1.7,Math.min(2.25,size.x*scale)),height:h,modelScale:scale,engine:performance[model.category]||12,topSpeed:topspeed[model.category]||50,
-  loaded:true,parked:true,drivePower:1,slip:0,grounded:true,lastImpactAt:0,smokeTimer:0,fireTimer:0,fireElapsed:0,damageFXTime:0,glassBroken:false,destroyed:false};
+  loaded:true,parked:true,drivePower:1,slip:0,driftTimer:0,grounded:true,lastImpactAt:0,smokeTimer:0,fireTimer:0,fireElapsed:0,damageFXTime:0,glassBroken:false,destroyed:false};
  buildVehicleDamageFX(v);return v;
 }
 
@@ -442,13 +438,12 @@ function nearestVehicle(){let best=null,d=7.4;for(const v of vehicles){if(!v.loa
 function enterVehicle(v){
  if(!v||activeVehicle)return;
  activeVehicle=v;v.parked=false;player.hidden=true;player.group.visible=false;
- chaseOrbit=0;chaseElevation=.19;chaseDistance=10;chaseDragging=false;controls.enabled=false;
- chaseFollowYaw=v.yaw;
+ chaseElevation=.19;chaseDistance=10;controls.enabled=false;
  vehicleNameEl.textContent=v.name;
- const back=new THREE.Vector3(-Math.sin(chaseFollowYaw),0,Math.cos(chaseFollowYaw));
+ const back=new THREE.Vector3(-Math.sin(v.yaw),0,Math.cos(v.yaw));
  camera.position.copy(v.position).addScaledVector(back,chaseDistance).add(new THREE.Vector3(0,4.2,0));
  controls.target.copy(v.position).add(new THREE.Vector3(0,v.height*.6+.45,0));camera.lookAt(controls.target);
- showToast(`Entered ${v.name} · W accelerate · S brake/reverse`);
+ showToast(`Entered ${v.name} · W accelerate · Space drift · S brake/reverse`);
 }
 function exitVehicle(){
  if(!activeVehicle)return;
@@ -459,7 +454,7 @@ function exitVehicle(){
  player.group.visible=true;player.group.position.copy(player.position);
  v.parked=false;v.steer=0;activeVehicle=null;controls.enabled=true;
  controls.target.copy(player.position).add(new THREE.Vector3(0,1.25,0));
- chaseDragging=false;vehicleNameEl.textContent='On foot';
+ vehicleNameEl.textContent='On foot';
  showToast(`Exited ${v.name} · vehicle keeps rolling`);
 }
 function resetVehicle(v){
@@ -598,6 +593,7 @@ function updateVehicle(v,dt,controlled=(v===activeVehicle)){
   const brake=controlled&&(keys.KeyS||keys.ArrowDown);
   const steerInput=controlled?((keys.KeyA||keys.ArrowLeft)?1:0)-((keys.KeyD||keys.ArrowRight)?1:0):0;
   const handbrake=controlled&&!!keys.Space;
+  const driftMode=handbrake&&controlled&&Math.abs(longitudinal)>5;
   const hardBrake=controlled&&!!(keys.ShiftLeft||keys.ShiftRight);
 
   v.steer=THREE.MathUtils.damp(v.steer,steerInput,controlled?8.5:5.5,dt);
@@ -626,7 +622,7 @@ function updateVehicle(v,dt,controlled=(v===activeVehicle)){
   const maxSteer=THREE.MathUtils.lerp(.58,.075,speedRatio);
   const steeringAngle=v.steer*maxSteer,wheelbase=clamp(v.length*.59,2.35,3.25);
   let yawRate=(longitudinal/wheelbase)*Math.tan(steeringAngle);
-  if(handbrake)yawRate*=1.16;
+  if(driftMode)yawRate*=1.32;else if(handbrake)yawRate*=1.16;
   yawRate=clamp(yawRate,-1.45,1.45)*surfaceGrip;
 
   const worldVelocity=forward.clone().multiplyScalar(longitudinal).addScaledVector(right,lateral);
@@ -634,12 +630,12 @@ function updateVehicle(v,dt,controlled=(v===activeVehicle)){
   const nextForward=new THREE.Vector3(0,0,-1).applyAxisAngle(up,v.yaw).normalize();
   const nextRight=new THREE.Vector3(1,0,0).applyAxisAngle(up,v.yaw).normalize();
   let nextLongitudinal=worldVelocity.dot(nextForward),nextLateral=worldVelocity.dot(nextRight);
-  const lateralGrip=handbrake ? .78 : (onRoad?5.4:2.7);
+  const lateralGrip=driftMode ? .72 : handbrake ? .78 : (onRoad?5.4:2.7);
   nextLateral*=Math.exp(-lateralGrip*dt);
   if(controlled&&Math.abs(nextLongitudinal)>1){
-    nextLateral+=v.steer*Math.abs(nextLongitudinal)*(handbrake ? .11 : .009)*dt;
+    nextLateral+=v.steer*Math.abs(nextLongitudinal)*(driftMode ? .34 : handbrake ? .11 : .009)*dt;
   }
-  const maxSide=Math.abs(nextLongitudinal)*(handbrake ? .82 : .30);
+  const maxSide=Math.abs(nextLongitudinal)*(driftMode ? .92 : handbrake ? .82 : .30);
   nextLateral=clamp(nextLateral,-maxSide,maxSide);
   v.velocity.copy(nextForward.multiplyScalar(nextLongitudinal)).add(nextRight.multiplyScalar(nextLateral));
   v.position.addScaledVector(v.velocity,dt);
@@ -688,6 +684,19 @@ function updateVehicle(v,dt,controlled=(v===activeVehicle)){
     if(w.front&&w.steerPivot)w.steerPivot.rotation.y=THREE.MathUtils.damp(w.steerPivot.rotation.y,w.baseSteer-wheelSteer,10,dt);
   }
   v.slip=Math.abs(nextLateral)/(Math.abs(nextLongitudinal)+1);
+  if(driftMode&&v.slip>.16&&Math.abs(nextLongitudinal)>8){
+    v.driftTimer+=dt;
+    if(v.driftTimer>=.10){
+      v.driftTimer=0;v.root.updateMatrixWorld(true);
+      const rearWheels=v.wheelMeshes.filter(w=>!w.front).slice(0,2);
+      const smokePoints=rearWheels.length?rearWheels.map(w=>w.mesh.getWorldPosition(new THREE.Vector3())):[v.pivot.localToWorld(new THREE.Vector3(0,.22,v.length*.31))];
+      for(const p of smokePoints){
+        p.y=Math.max(.16,p.y);
+        const vel=new THREE.Vector3(v.velocity.x*.12+(Math.random()-.5)*.35,.2,v.velocity.z*.12+(Math.random()-.5)*.35);
+        spawnParticle(p,vel,0xb9beb8,.62,.085,'smoke');
+      }
+    }
+  }else v.driftTimer=0;
   updateVehicleDamageFX(v,dt);
   if(!controlled&&v.velocity.length()<.055){v.velocity.set(0,0,0);v.parked=true;v.steer=0;}
 }
@@ -710,9 +719,9 @@ function updateHUD(){if(activeVehicle){const kmh=Math.round(Math.abs(activeVehic
 function updateCamera(dt){
  if(activeVehicle){
   const v=activeVehicle;
-  let yawDelta=((v.yaw-chaseFollowYaw+Math.PI*3)%(Math.PI*2))-Math.PI;
-  chaseFollowYaw+=yawDelta*(1-Math.exp(-2.15*dt));
-  const angle=chaseFollowYaw+chaseOrbit;
+  // Rigid chase view: camera position is calculated from the car's live heading,
+  // so it cannot orbit away from or trail around the side of the vehicle.
+  const angle=v.yaw;
   const target=v.position.clone().add(new THREE.Vector3(0,Math.max(1.2,v.height*.62+.35),0));
   const horizontal=chaseDistance*Math.cos(chaseElevation);
   const desired=new THREE.Vector3(
@@ -720,7 +729,7 @@ function updateCamera(dt){
    v.y+2.15+Math.sin(chaseElevation)*chaseDistance,
    v.position.z+Math.cos(angle)*horizontal
   );
-  camera.position.lerp(desired,1-Math.exp(-4.2*dt));
+  camera.position.copy(desired);
   controls.target.copy(target);camera.lookAt(target);return;
  }
  controls.enabled=true;
