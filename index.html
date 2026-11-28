@@ -28,6 +28,13 @@
 #loading-title{font-size:14px;font-weight:750;margin-bottom:5px}#loading-text{font-size:12px;color:var(--muted)}#progress{height:5px;background:#344137;border-radius:8px;margin-top:12px;overflow:hidden}#progressbar{height:100%;width:0;background:#a4c68e;transition:width .2s}
 #errors{position:fixed;z-index:8;left:50%;top:76px;transform:translateX(-50%);max-width:min(680px,92vw);max-height:22vh;overflow:auto;display:none;padding:10px 13px;background:#351e1de8;border:1px solid #a35e55;border-radius:7px;color:#ffd9d3;font-size:11px}
 #toast{position:fixed;z-index:9;left:50%;bottom:90px;transform:translateX(-50%);background:#17211beF;border:1px solid #728370;border-radius:7px;padding:9px 13px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none}
+
+#used-overlay{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(18,8,8,.18);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .28s ease,visibility .28s ease}
+#used-overlay.show{opacity:1;visibility:visible;background:rgba(20,9,9,.48)}
+#used-word{font-family:Impact,"Haettenschweiler","Arial Narrow Bold","Arial Black",sans-serif;font-size:clamp(76px,15vw,172px);font-weight:1000;line-height:.84;letter-spacing:.055em;color:#eee9e4;-webkit-text-stroke:2px #5a1715;text-shadow:0 4px 0 #651b18,0 8px 0 #24100f,0 0 24px #d9342866;transform:scaleX(1.08);text-transform:uppercase}
+#used-caption{margin-top:18px;font:800 12px/1.2 system-ui,sans-serif;letter-spacing:.28em;color:#f0d9d4;text-shadow:0 2px 5px #000;text-transform:uppercase}
+@media(max-width:700px){#used-word{font-size:clamp(66px,19vw,120px)}}
+
 @media(max-width:700px){#topbar{left:8px;right:8px;top:8px;gap:6px}.brand{padding:8px;font-size:10px}#garage{right:8px;top:52px;width:min(210px,46vw);max-height:37vh}#hud{left:8px;bottom:8px;gap:5px}.panel{padding:9px;min-width:92px}.big{font-size:23px}#rightui{right:8px;bottom:8px}.controlhelp{max-width:190px;font-size:10px}#errors{top:52px}}
 </style>
 <script type="importmap">
@@ -51,6 +58,7 @@
 </div>
 <div id="loading"><div id="loading-title">Loading the test grounds</div><div id="loading-text">Building terrain and loading car models…</div><div id="progress"><div id="progressbar"></div></div></div>
 <div id="errors"></div><div id="toast"></div>
+<div id="used-overlay" aria-live="assertive"><div id="used-word">USED</div><div id="used-caption">You got caught in the blast</div></div>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -315,7 +323,7 @@ function fixMaterials(object,model){
 }
 function modelSize(object){object.updateMatrixWorld(true);return new THREE.Box3().setFromObject(object).getSize(new THREE.Vector3());}
 function createShadow(){const g=new THREE.CircleGeometry(2.2,20);g.rotateX(-Math.PI/2);return new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0x18201a,transparent:true,opacity:.22,depthWrite:false}));}
-const vehicles=[];let activeVehicle=null;let player=null;let loadErrors=[];const keys={};let lastToast=0;function nowMs(){return (typeof performance!=='undefined'&&typeof performance.now==='function')?performance.now():Date.now();}
+const vehicles=[];let activeVehicle=null;let player=null;let loadErrors=[];const keys={};let lastToast=0;let playerDead=false,wastedRespawnAt=0;function nowMs(){return (typeof performance!=='undefined'&&typeof performance.now==='function')?performance.now():Date.now();}
 const tmpV=new THREE.Vector3(),tmpV2=new THREE.Vector3();
 const particles=[];
 function showToast(message){const t=$('#toast');t.textContent=message;t.style.opacity='1';lastToast=nowMs();}
@@ -378,7 +386,7 @@ function layoutParking(){
   vehicles.forEach((v,i)=>{
     const row=Math.floor(i/cols),col=i%cols;
     const x=(col-2)*spacingX,z=66+row*spacingZ;
-    v.position.set(x,terrainHeight(x,z),z);v.y=v.position.y;v.yaw=0;
+    v.position.set(x,terrainHeight(x,z),z);v.y=v.position.y;v.yaw=Math.PI;
     v.velocity.set(0,0,0);v.parked=true;
     v.root.position.copy(v.position);v.root.rotation.y=v.yaw;v.root.visible=true;
   });
@@ -485,8 +493,29 @@ function updateParticles(dt){
  }
 }
 
+function showUsed(){
+ if(playerDead)return;
+ playerDead=true;wastedRespawnAt=nowMs()+3200;
+ if(player){player.group.visible=false;player.velocity.set(0,0,0);}
+ if(activeVehicle){activeVehicle.velocity.set(0,0,0);activeVehicle=null;controls.enabled=true;}
+ $('#used-overlay').classList.add('show');
+ vehicleNameEl.textContent='On foot';speedEl.textContent='0';
+ showToast('You were caught in the explosion');
+}
+function updateWasted(){
+ if(!playerDead||nowMs()<wastedRespawnAt)return;
+ const spawn=new THREE.Vector3(-24,terrainHeight(-24,94),94);
+ player.position.copy(spawn);player.velocity.set(0,0,0);player.group.position.copy(spawn);player.group.visible=true;player.yaw=0;
+ playerDead=false;$('#used-overlay').classList.remove('show');
+ controls.enabled=true;controls.target.copy(spawn).add(new THREE.Vector3(0,1.25,0));
+ showToast('Back on your feet');
+}
 function detonateVehicle(v){
- if(v.destroyed)return;v.destroyed=true;v.damage=100;v.drivePower=0;v.velocity.set(0,0,0);v.vy=0;v.parked=true;v.fireGroup.visible=false;if(v.fireLight)v.fireLight.intensity=0;
+ if(v.destroyed)return;
+ const caughtInside=activeVehicle===v;
+ const blastDistance=player?Math.hypot(player.position.x-v.position.x,player.position.z-v.position.z):Infinity;
+ if(caughtInside||blastDistance<=12.5)showUsed();
+ v.destroyed=true;v.damage=100;v.drivePower=0;v.velocity.set(0,0,0);v.vy=0;v.parked=true;v.fireGroup.visible=false;if(v.fireLight)v.fireLight.intensity=0;
  const point=v.position.clone().add(new THREE.Vector3(0,Math.max(.75,v.height*.48),0));spawnParticle(point,new THREE.Vector3(0,.5,0),0xffb54a,.42,.1,'blast');
  for(let i=0;i<28;i++){const a=Math.random()*Math.PI*2,speed=2+Math.random()*8,vel=new THREE.Vector3(Math.cos(a)*speed,1+Math.random()*6,Math.sin(a)*speed);spawnParticle(point,vel,i%3?0xff6a1a:0xffd27a,.55+Math.random()*.7,.045+Math.random()*.045,i%4===0?'fire':'spark');}
  for(const mesh of v.bodyMeshes){const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];for(const m of materials){if(!m?.color||v.burntMaterials.has(m))continue;v.burntMaterials.set(m,{color:m.color.clone(),roughness:m.roughness,metalness:m.metalness});m.color.lerp(new THREE.Color(0x191916),.76);if('roughness' in m)m.roughness=.98;if('metalness' in m)m.metalness=Math.min(m.metalness||0,.08);m.needsUpdate=true;}}
@@ -553,8 +582,8 @@ function updateCamera(dt){
  if(activeVehicle){const v=activeVehicle,angle=v.yaw+chaseOrbit,target=v.position.clone().add(new THREE.Vector3(0,Math.max(1.2,v.height*.62+.35),0)),horizontal=chaseDistance*Math.cos(chaseElevation),desired=new THREE.Vector3(v.position.x-Math.sin(angle)*horizontal,v.y+2.15+Math.sin(chaseElevation)*chaseDistance,v.position.z+Math.cos(angle)*horizontal);camera.position.lerp(desired,1-Math.exp(-5.2*dt));controls.target.copy(target);camera.lookAt(target);return;}
  controls.enabled=true;const target=player.position.clone().add(new THREE.Vector3(0,1.25,0));controls.target.lerp(target,1-Math.exp(-5.5*dt));controls.update();
 }
-function animate(){const dt=Math.min(clock.getDelta(),.04);if(!player){controls.update();renderer.render(scene,camera);return;}if(activeVehicle)updateVehicle(activeVehicle,dt);else updatePlayer(dt);for(const v of vehicles)if(v!==activeVehicle&&v.damage>=76&&!v.destroyed)updateVehicleDamageFX(v,dt);updateParticles(dt);updateCamera(dt);updatePrompt();updateHUD();renderer.render(scene,camera);if(lastToast&&nowMs()-lastToast>1800)$('#toast').style.opacity='0';}
-function onKeyDown(e){if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys[e.code]=true;if(e.repeat)return;if(e.code==='KeyE'){if(activeVehicle)exitVehicle();else{const v=nearestVehicle();if(v)enterVehicle(v);else showToast('Get closer to a parked vehicle.');}}if(e.code==='KeyR'&&activeVehicle)resetVehicle(activeVehicle);}
+function animate(){const dt=Math.min(clock.getDelta(),.04);if(!player){controls.update();renderer.render(scene,camera);return;}if(activeVehicle)updateVehicle(activeVehicle,dt);else if(!playerDead)updatePlayer(dt);for(const v of vehicles)if(v!==activeVehicle&&v.damage>=76&&!v.destroyed)updateVehicleDamageFX(v,dt);updateParticles(dt);updateWasted();updateCamera(dt);updatePrompt();updateHUD();renderer.render(scene,camera);if(lastToast&&nowMs()-lastToast>1800)$('#toast').style.opacity='0';}
+function onKeyDown(e){if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys[e.code]=true;if(e.repeat)return;if(playerDead)return;if(e.code==='KeyE'){if(activeVehicle)exitVehicle();else{const v=nearestVehicle();if(v)enterVehicle(v);else showToast('Get closer to a parked vehicle.');}}if(e.code==='KeyR'&&activeVehicle)resetVehicle(activeVehicle);}
 function onKeyUp(e){keys[e.code]=false;}
 window.addEventListener('keydown',onKeyDown);window.addEventListener('keyup',onKeyUp);window.addEventListener('blur',()=>Object.keys(keys).forEach(k=>keys[k]=false));
 function resize(){const w=host.clientWidth,h=host.clientHeight;camera.aspect=w/Math.max(h,1);camera.updateProjectionMatrix();renderer.setSize(w,h,false);}window.addEventListener('resize',resize);resize();
