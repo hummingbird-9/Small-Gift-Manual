@@ -442,7 +442,7 @@ function nearestVehicle(){let best=null,d=7.4;for(const v of vehicles){if(!v.loa
 function enterVehicle(v){
  if(!v||activeVehicle)return;
  activeVehicle=v;v.parked=false;player.hidden=true;player.group.visible=false;
- chaseOrbit=0;chaseElevation=.19;chaseDistance=10;chaseDragging=false;controls.enabled=false;v.velocity.set(0,0,0);
+ chaseOrbit=0;chaseElevation=.19;chaseDistance=10;chaseDragging=false;controls.enabled=false;
  chaseFollowYaw=v.yaw;
  vehicleNameEl.textContent=v.name;
  const back=new THREE.Vector3(-Math.sin(chaseFollowYaw),0,Math.cos(chaseFollowYaw));
@@ -451,7 +451,16 @@ function enterVehicle(v){
  showToast(`Entered ${v.name} · W accelerate · S brake/reverse`);
 }
 function exitVehicle(){
- if(!activeVehicle)return;const v=activeVehicle,right=new THREE.Vector3(Math.cos(v.yaw),0,Math.sin(v.yaw));player.position.copy(v.position).addScaledVector(right,-2.7);player.position.y=terrainHeight(player.position.x,player.position.z);player.yaw=v.yaw;player.velocity.copy(v.velocity).multiplyScalar(.12);player.group.visible=true;player.group.position.copy(player.position);activeVehicle=null;controls.enabled=true;controls.target.copy(player.position).add(new THREE.Vector3(0,1.25,0));chaseDragging=false;vehicleNameEl.textContent='On foot';showToast(`Exited ${v.name}`);
+ if(!activeVehicle)return;
+ const v=activeVehicle,right=new THREE.Vector3(Math.cos(v.yaw),0,Math.sin(v.yaw));
+ player.position.copy(v.position).addScaledVector(right,-2.9);
+ player.position.y=terrainHeight(player.position.x,player.position.z);
+ player.yaw=v.yaw;player.velocity.set(0,0,0);
+ player.group.visible=true;player.group.position.copy(player.position);
+ v.parked=false;v.steer=0;activeVehicle=null;controls.enabled=true;
+ controls.target.copy(player.position).add(new THREE.Vector3(0,1.25,0));
+ chaseDragging=false;vehicleNameEl.textContent='On foot';
+ showToast(`Exited ${v.name} · vehicle keeps rolling`);
 }
 function resetVehicle(v){
  v.position.set(v.position.x,terrainHeight(v.position.x,v.position.z),v.position.z);v.y=v.position.y;v.velocity.set(0,0,0);v.vy=0;v.damage=0;v.drivePower=1;v.steer=0;v.slip=0;
@@ -567,33 +576,119 @@ function updateVehicleDamageFX(v,dt){
 function onCollision(v,normal,impact){
  const stamp=nowMs();if(stamp-(v.lastImpactAt||0)<300)return;v.lastImpactAt=stamp;
  const point=damageContactPoint(v,normal),severity=Math.pow(Math.max(0,impact-1.6),1.28)*2.45;
- addDamage(v,point,normal,severity);burst(point,v.velocity);v.velocity.addScaledVector(normal,Math.min(impact*.42,11));v.velocity.multiplyScalar(.58);
+ addDamage(v,point,normal,severity);burst(point,v.velocity);
+  const normalSpeed=v.velocity.dot(normal);
+  if(normalSpeed<0){
+    const normalPart=normal.clone().multiplyScalar(normalSpeed);
+    const tangentPart=v.velocity.clone().sub(normalPart).multiplyScalar(.88);
+    v.velocity.copy(tangentPart).addScaledVector(normal,-normalSpeed*.22);
+  }else v.velocity.multiplyScalar(.88);
 }
 
-function updateVehicle(v,dt){
-   if(v.destroyed){v.velocity.set(0,0,0);updateVehicleDamageFX(v,dt);return;}
- const forward=new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0),v.yaw).normalize();
- const right=new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0),v.yaw).normalize();
- let longitudinal=v.velocity.dot(forward),lateral=v.velocity.dot(right);
- const throttle=!!(keys.KeyW||keys.ArrowUp),brake=!!(keys.KeyS||keys.ArrowDown),steerInput=((keys.KeyA||keys.ArrowLeft)?1:0)-((keys.KeyD||keys.ArrowRight)?1:0);
- v.steer=THREE.MathUtils.damp(v.steer,steerInput,9,dt);const handbrake=!!keys.Space,hardBrake=!!(keys.ShiftLeft||keys.ShiftRight),onRoad=Math.abs(Math.sqrt((v.position.x/TRACK_RX)**2+(v.position.z/TRACK_RZ)**2)-1)<.12,surfaceGrip=onRoad?1:.72;
- if(throttle){if(longitudinal<0)longitudinal=Math.min(0,longitudinal+30*dt);else longitudinal+=v.engine*v.drivePower*dt*(1-Math.pow(clamp(longitudinal/v.topSpeed,0,1),1.65));}
- if(brake){if(longitudinal>0)longitudinal=Math.max(0,longitudinal-31*dt);else longitudinal-=v.engine*.78*dt;}
- if(!throttle&&!brake){const rolling=.32+Math.abs(longitudinal)*.018;longitudinal-=Math.sign(longitudinal)*Math.min(Math.abs(longitudinal),rolling*dt);}
- if(hardBrake)longitudinal-=Math.sign(longitudinal)*Math.min(Math.abs(longitudinal),27*dt);
- longitudinal=clamp(longitudinal,-Math.max(8,v.topSpeed*.23),v.topSpeed);
- const speedFactor=clamp(Math.abs(longitudinal)/24,0,1),steeringAngle=v.steer*THREE.MathUtils.lerp(.56,.29,speedFactor),wheelbase=2.75;let yawRate=(longitudinal/wheelbase)*Math.tan(steeringAngle);if(handbrake)yawRate*=1.28;v.yaw+=clamp(yawRate,-1.9,1.9)*surfaceGrip*dt;
- const f2=new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0),v.yaw).normalize(),r2=new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0),v.yaw).normalize();lateral*=Math.exp(-(handbrake?1.05:(onRoad?6.8:3.6))*dt);lateral+=v.steer*Math.abs(longitudinal)*(handbrake?.16:.035)*dt;lateral=clamp(lateral,-Math.abs(longitudinal)*(handbrake?.72:.34),Math.abs(longitudinal)*(handbrake?.72:.34));
- v.velocity.copy(f2.multiplyScalar(longitudinal)).add(r2.multiplyScalar(lateral));v.position.addScaledVector(v.velocity,dt);
- for(const tree of treePositions){const dx=v.position.x-tree.x,dz=v.position.z-tree.z,dist=Math.hypot(dx,dz);if(dist<2.4){const n=new THREE.Vector3(dx/(dist||1),0,dz/(dist||1)),impact=Math.abs(v.velocity.dot(n));v.position.x=tree.x+n.x*2.45;v.position.z=tree.z+n.z*2.45;if(impact>4)onCollision(v,n,impact);}}
- for(const other of vehicles){if(other===v||!other.loaded)continue;const dx=v.position.x-other.position.x,dz=v.position.z-other.position.z,dist=Math.hypot(dx,dz),min=3.5;if(dist<min){const n=new THREE.Vector3(dx/(dist||1),0,dz/(dist||1)),impact=Math.abs(v.velocity.dot(n));v.position.x=other.position.x+n.x*min;v.position.z=other.position.z+n.z*min;if(impact>3)onCollision(v,n,impact);}}
- const wb=2.75,track=Math.max(1.35,v.width*.78),corners=[];for(const x of [-track/2,track/2])for(const z of [-wb/2,wb/2]){const wx=v.position.x+Math.cos(v.yaw)*x+Math.sin(v.yaw)*z,wz=v.position.z+Math.sin(v.yaw)*x-Math.cos(v.yaw)*z;corners.push(terrainHeight(wx,wz));}
- const avg=corners.reduce((a,b)=>a+b,0)/4,front=(corners[0]+corners[1])*.5,rear=(corners[2]+corners[3])*.5,left=(corners[0]+corners[2])*.5,rightH=(corners[1]+corners[3])*.5,targetY=avg+.025,spring=24,damping=8.8;
- v.vy+=(targetY-v.y)*spring*dt-v.vy*damping*dt;v.y+=v.vy*dt;
- v.pitch=THREE.MathUtils.damp(v.pitch,clamp((rear-front)/wb-longitudinal*.0018,-.14,.14),6,dt);v.roll=THREE.MathUtils.damp(v.roll,clamp((rightH-left)/track-v.steer*speedFactor*.045,-.18,.18),7,dt);
- v.root.position.set(v.position.x,v.y,v.position.z);v.root.rotation.y=v.yaw;v.pivot.rotation.set(v.pitch,0,v.roll);
- v.wheelAngle+=longitudinal*dt/.34;for(const w of v.wheelMeshes){w.mesh.rotation[w.spinAxis]=w.baseSpin+v.wheelAngle;if(w.front&&w.steerPivot)w.steerPivot.rotation.y=THREE.MathUtils.damp(w.steerPivot.rotation.y,w.baseSteer-v.steer*.48,10,dt);}
- v.slip=Math.abs(lateral)/(Math.abs(longitudinal)+1);updateVehicleDamageFX(v,dt);
+function updateVehicle(v,dt,controlled=(v===activeVehicle)){
+  if(v.destroyed){v.velocity.set(0,0,0);updateVehicleDamageFX(v,dt);return;}
+
+  const up=new THREE.Vector3(0,1,0);
+  const forward=new THREE.Vector3(0,0,-1).applyAxisAngle(up,v.yaw).normalize();
+  const right=new THREE.Vector3(1,0,0).applyAxisAngle(up,v.yaw).normalize();
+  let longitudinal=v.velocity.dot(forward),lateral=v.velocity.dot(right);
+
+  const throttle=controlled&&(keys.KeyW||keys.ArrowUp);
+  const brake=controlled&&(keys.KeyS||keys.ArrowDown);
+  const steerInput=controlled?((keys.KeyA||keys.ArrowLeft)?1:0)-((keys.KeyD||keys.ArrowRight)?1:0):0;
+  const handbrake=controlled&&!!keys.Space;
+  const hardBrake=controlled&&!!(keys.ShiftLeft||keys.ShiftRight);
+
+  v.steer=THREE.MathUtils.damp(v.steer,steerInput,controlled?8.5:5.5,dt);
+  const radial=Math.sqrt((v.position.x/TRACK_RX)**2+(v.position.z/TRACK_RZ)**2);
+  const onRoad=Math.abs(radial-1)<.12,surfaceGrip=onRoad?1:.72;
+  const speed=Math.abs(longitudinal),acceleration=(v.engine||10)*.48*v.drivePower*surfaceGrip;
+
+  if(throttle){
+    if(longitudinal<-.25)longitudinal=Math.min(0,longitudinal+30*dt);
+    else{
+      const ratio=clamp(longitudinal/Math.max(v.topSpeed,1),0,1);
+      longitudinal+=acceleration*(1-.58*ratio*ratio)*dt;
+    }
+  }else if(brake){
+    if(longitudinal>.25)longitudinal=Math.max(0,longitudinal-25*dt);
+    else longitudinal-=acceleration*.58*dt;
+  }else{
+    const rolling=controlled ? .24 : .16,airDrag=controlled ? .010 : .018;
+    const loss=(rolling+speed*airDrag)*dt;
+    longitudinal-=Math.sign(longitudinal)*Math.min(Math.abs(longitudinal),loss);
+  }
+  if(hardBrake)longitudinal-=Math.sign(longitudinal)*Math.min(Math.abs(longitudinal),32*dt);
+  longitudinal=clamp(longitudinal,-Math.max(7,v.topSpeed*.24),v.topSpeed);
+
+  const speedRatio=clamp(speed/Math.max(v.topSpeed,1),0,1);
+  const maxSteer=THREE.MathUtils.lerp(.58,.075,speedRatio);
+  const steeringAngle=v.steer*maxSteer,wheelbase=clamp(v.length*.59,2.35,3.25);
+  let yawRate=(longitudinal/wheelbase)*Math.tan(steeringAngle);
+  if(handbrake)yawRate*=1.16;
+  yawRate=clamp(yawRate,-1.45,1.45)*surfaceGrip;
+
+  const worldVelocity=forward.clone().multiplyScalar(longitudinal).addScaledVector(right,lateral);
+  v.yaw+=yawRate*dt;
+  const nextForward=new THREE.Vector3(0,0,-1).applyAxisAngle(up,v.yaw).normalize();
+  const nextRight=new THREE.Vector3(1,0,0).applyAxisAngle(up,v.yaw).normalize();
+  let nextLongitudinal=worldVelocity.dot(nextForward),nextLateral=worldVelocity.dot(nextRight);
+  const lateralGrip=handbrake ? .78 : (onRoad?5.4:2.7);
+  nextLateral*=Math.exp(-lateralGrip*dt);
+  if(controlled&&Math.abs(nextLongitudinal)>1){
+    nextLateral+=v.steer*Math.abs(nextLongitudinal)*(handbrake ? .11 : .009)*dt;
+  }
+  const maxSide=Math.abs(nextLongitudinal)*(handbrake ? .82 : .30);
+  nextLateral=clamp(nextLateral,-maxSide,maxSide);
+  v.velocity.copy(nextForward.multiplyScalar(nextLongitudinal)).add(nextRight.multiplyScalar(nextLateral));
+  v.position.addScaledVector(v.velocity,dt);
+
+  for(const tree of treePositions){
+    const dx=v.position.x-tree.x,dz=v.position.z-tree.z,dist=Math.hypot(dx,dz);
+    if(dist<2.4){
+      const n=new THREE.Vector3(dx/(dist||1),0,dz/(dist||1)),impact=Math.abs(v.velocity.dot(n));
+      v.position.x=tree.x+n.x*2.45;v.position.z=tree.z+n.z*2.45;
+      if(impact>3.1)onCollision(v,n,impact);
+    }
+  }
+  for(const other of vehicles){
+    if(other===v||!other.loaded)continue;
+    const dx=v.position.x-other.position.x,dz=v.position.z-other.position.z;
+    const dist=Math.hypot(dx,dz),min=(v.width+other.width)*.50+1.0;
+    if(dist<min){
+      const n=new THREE.Vector3(dx/(dist||1),0,dz/(dist||1)),impact=Math.abs(v.velocity.dot(n));
+      v.position.x=other.position.x+n.x*min;v.position.z=other.position.z+n.z*min;
+      if(impact>2.5)onCollision(v,n,impact);
+    }
+  }
+
+  const wb=wheelbase,track=Math.max(1.35,v.width*.78),corners=[];
+  for(const x of [-track/2,track/2])for(const z of [-wb/2,wb/2]){
+    const wx=v.position.x+Math.cos(v.yaw)*x+Math.sin(v.yaw)*z;
+    const wz=v.position.z+Math.sin(v.yaw)*x-Math.cos(v.yaw)*z;
+    corners.push(terrainHeight(wx,wz));
+  }
+  const average=corners.reduce((a,b)=>a+b,0)/4;
+  const front=(corners[0]+corners[1])*.5,rear=(corners[2]+corners[3])*.5;
+  const left=(corners[0]+corners[2])*.5,rightHeight=(corners[1]+corners[3])*.5;
+  const targetY=average+.025,spring=25,damping=9.2;
+  v.vy+=(targetY-v.y)*spring*dt-v.vy*damping*dt;v.y+=v.vy*dt;
+  const brakePitch=(controlled&&brake&&longitudinal>0)? .035 : 0;
+  const accelPitch=(controlled&&throttle&&longitudinal>0)? -.025 : 0;
+  v.pitch=THREE.MathUtils.damp(v.pitch,clamp((rear-front)/wb+brakePitch+accelPitch,-.16,.16),6.5,dt);
+  v.roll=THREE.MathUtils.damp(v.roll,clamp((rightHeight-left)/track-v.steer*speedRatio*.035,-.16,.16),7.5,dt);
+
+  v.root.position.set(v.position.x,v.y,v.position.z);
+  v.root.rotation.y=v.yaw;v.pivot.rotation.set(v.pitch,0,v.roll);
+  v.wheelAngle+=nextLongitudinal*dt/.34;
+  const wheelSteer=v.steer*THREE.MathUtils.lerp(.48,.10,speedRatio);
+  for(const w of v.wheelMeshes){
+    w.mesh.rotation[w.spinAxis]=w.baseSpin+v.wheelAngle;
+    if(w.front&&w.steerPivot)w.steerPivot.rotation.y=THREE.MathUtils.damp(w.steerPivot.rotation.y,w.baseSteer-wheelSteer,10,dt);
+  }
+  v.slip=Math.abs(nextLateral)/(Math.abs(nextLongitudinal)+1);
+  updateVehicleDamageFX(v,dt);
+  if(!controlled&&v.velocity.length()<.055){v.velocity.set(0,0,0);v.parked=true;v.steer=0;}
 }
 function updatePlayer(dt){
   const forwardInput=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0);
@@ -631,7 +726,7 @@ function updateCamera(dt){
  const target=player.position.clone().add(new THREE.Vector3(0,1.25,0));
  controls.target.lerp(target,1-Math.exp(-5.5*dt));controls.update();
 }
-function animate(){const dt=Math.min(clock.getDelta(),.04);if(!player){controls.update();renderer.render(scene,camera);return;}if(activeVehicle)updateVehicle(activeVehicle,dt);else if(!playerDead)updatePlayer(dt);for(const v of vehicles)if(v!==activeVehicle&&v.damage>=76&&!v.destroyed)updateVehicleDamageFX(v,dt);updateParticles(dt);updateWasted();updateCamera(dt);updatePrompt();updateHUD();renderer.render(scene,camera);if(lastToast&&nowMs()-lastToast>1800)$('#toast').style.opacity='0';}
+function animate(){const dt=Math.min(clock.getDelta(),.04);if(!player){controls.update();renderer.render(scene,camera);return;}if(activeVehicle)updateVehicle(activeVehicle,dt,true);else if(!playerDead)updatePlayer(dt);for(const v of vehicles){if(v===activeVehicle)continue;if(v.destroyed)updateVehicleDamageFX(v,dt);else if(!v.parked)updateVehicle(v,dt,false);else if(v.damage>=76)updateVehicleDamageFX(v,dt);}updateParticles(dt);updateWasted();updateCamera(dt);updatePrompt();updateHUD();renderer.render(scene,camera);if(lastToast&&nowMs()-lastToast>1800)$('#toast').style.opacity='0';}
 function onKeyDown(e){if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys[e.code]=true;if(e.repeat)return;if(playerDead)return;if(e.code==='KeyE'){if(activeVehicle)exitVehicle();else{const v=nearestVehicle();if(v)enterVehicle(v);else showToast('Get closer to a parked vehicle.');}}if(e.code==='KeyR'&&activeVehicle)resetVehicle(activeVehicle);}
 function onKeyUp(e){keys[e.code]=false;}
 window.addEventListener('keydown',onKeyDown);window.addEventListener('keyup',onKeyUp);window.addEventListener('blur',()=>Object.keys(keys).forEach(k=>keys[k]=false));
