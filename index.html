@@ -592,7 +592,7 @@ function updateVehicle(v,dt){
  v.vy+=(targetY-v.y)*spring*dt-v.vy*damping*dt;v.y+=v.vy*dt;
  v.pitch=THREE.MathUtils.damp(v.pitch,clamp((rear-front)/wb-longitudinal*.0018,-.14,.14),6,dt);v.roll=THREE.MathUtils.damp(v.roll,clamp((rightH-left)/track-v.steer*speedFactor*.045,-.18,.18),7,dt);
  v.root.position.set(v.position.x,v.y,v.position.z);v.root.rotation.y=v.yaw;v.pivot.rotation.set(v.pitch,0,v.roll);
- v.wheelAngle+=longitudinal*dt/.34;for(const w of v.wheelMeshes){w.mesh.rotation[w.spinAxis]=w.baseSpin+v.wheelAngle;if(w.front&&w.steerPivot)w.steerPivot.rotation.y=THREE.MathUtils.damp(w.steerPivot.rotation.y,w.baseSteer+v.steer*.48,10,dt);}
+ v.wheelAngle+=longitudinal*dt/.34;for(const w of v.wheelMeshes){w.mesh.rotation[w.spinAxis]=w.baseSpin+v.wheelAngle;if(w.front&&w.steerPivot)w.steerPivot.rotation.y=THREE.MathUtils.damp(w.steerPivot.rotation.y,w.baseSteer-v.steer*.48,10,dt);}
  v.slip=Math.abs(lateral)/(Math.abs(longitudinal)+1);updateVehicleDamageFX(v,dt);
 }
 function updatePlayer(dt){
